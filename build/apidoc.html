@@ -1,0 +1,210 @@
+<div class="apidocDiv">
+<style>
+/*csslint
+*/
+.apidocDiv {
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.apidocDiv a[href] {
+    color: #33f;
+    font-weight: bold;
+    text-decoration: none;
+}
+.apidocDiv a[href]:hover {
+    text-decoration: underline;
+}
+.apidocCodeCommentSpan {
+    background: #bbf;
+    color: #000;
+    display: block;
+}
+.apidocCodeKeywordSpan {
+    color: #d00;
+    font-weight: bold;
+}
+.apidocCodePre {
+    background: #eef;
+    border: 1px solid;
+    color: #777;
+    padding: 5px;
+    white-space: pre-wrap;
+}
+.apidocFooterDiv {
+    margin-top: 20px;
+    text-align: center;
+}
+.apidocModuleLi {
+    margin-top: 10px;
+}
+.apidocSectionDiv {
+    border-top: 1px solid;
+    margin-top: 20px;
+}
+.apidocSignatureSpan {
+    color: #777;
+    font-weight: bold;
+}
+</style>
+<h1>api documentation for
+    <a
+
+        href="https://github.com/sorribas/phantom-render-stream#readme"
+
+    >phantom-render-stream (v2.2.0)</a>
+</h1>
+<h4>Render a webpage and get the image as a stream</h4>
+<div class="apidocSectionDiv"><a
+    href="#apidoc.tableOfContents"
+    id="apidoc.tableOfContents"
+><h1>table of contents</h1></a><ol>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.phantom-render-stream">module phantom-render-stream</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.phantom-render-stream.phantom-render-stream">
+            function <span class="apidocSignatureSpan"></span>phantom-render-stream
+            <span class="apidocSignatureSpan">(opts)</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+</ol></div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.phantom-render-stream" id="apidoc.module.phantom-render-stream">module phantom-render-stream</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.phantom-render-stream.phantom-render-stream" id="apidoc.element.phantom-render-stream.phantom-render-stream">
+        function <span class="apidocSignatureSpan"></span>phantom-render-stream
+        <span class="apidocSignatureSpan">(opts)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">phantom-render-stream = function (opts) {
+  var defaultOpts = {
+    pool         : 1,
+    maxErrors    : 3,
+    phantomFlags : [],
+    timeout      : 30000,
+    retries      : 1,
+    tmp          : TMP,
+    format       : &#x27;png&#x27;,
+    quality      : 100,
+    listen       : &#x27;0.0.0.0&#x27;,
+    requestWhitelist: false
+  };
+
+  opts = xtend(defaultOpts,opts);
+
+  var worker = pool(opts);
+  var server = serve(opts);
+  var queued = {};
+
+  worker.on(&#x27;data&#x27;, function(data) {
+    var proxy = queued[data.id];
+    if (!proxy) return;
+
+    if (data.log) return proxy.emit(&#x27;log&#x27;, data.log);
+
+    if (!data.success &#x26;&#x26; data.tries &#x3c; opts.retries) {
+      fs.unlink(data.filename, noop);
+      data.tries++;
+      data.filename = _getTmpFile(opts.tmp,data.format);
+      data.sent = Date.now();
+      return worker.write(data);
+    }
+
+    delete queued[data.id];
+    if (!data.success) {
+      fs.unlink(data.filename, noop);
+      return proxy.destroy(new Error(
+        &#x27;Render failed (&#x27; + data.tries + &#x27; tries) &#x27; +
+        &#x27;Request details: &#x27; + JSON.stringify(data)));
+    }
+
+    eos(proxy, { writable: false }, function() {
+      fs.unlink(data.filename, noop);
+    });
+
+    proxy.setReadable(fs.createReadStream(data.filename));
+  });
+
+  var mkdir = thunky(function(cb) {
+    mkdirp(opts.tmp, cb);
+  });
+
+  var render  = function(url, ropts) {
+    if(typeof url !== &#x27;string&#x27;) {
+      ropts = url;
+      url = null;
+    }
+
+    var id = hat();
+    var proxy = queued[id] = duplexify();
+
+    var initialize = function (url) {
+      sopts = xtend(opts, ropts)
+      ropts = xtend({
+        url        : url
+      }, sopts);
+
+      ropts.maxRenders = opts.maxRenders;
+      ropts.filename = _getTmpFile(opts.tmp,ropts.format);
+      ropts.id = id;
+      ropts.sent = Date.now();
+      ropts.tries = 0;
+      if (ropts.crop === true) ropts.crop = {top:0, left:0};
+
+      ropts.injectJs = ropts.injectJs || opts.injectJs || [];
+
+      mkdir(function(err) {
+        if (err) return proxy.destroy(err);
+        ropts.tries++;
+        worker.write(ropts);
+      });
+    };
+
+    proxy.on(&#x27;close&#x27;, function() { // gc yo
+      delete queued[id];
+    });
+
+    if(url) {
+      initialize(url);
+    } else {
+      var sink = concat(function(data) {
+        server.set(id, data, function(err, url) {
+          if(err) return proxy.destroy(err);
+          initialize(url);
+        });
+      });
+
+      proxy.setWritable(sink);
+    }
+
+    return proxy;
+  };
+
+  render.destroy = function(cb) {
+    worker.destroy();
+    server.safeDestroy(cb);
+  };
+
+  return render;
+}</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocFooterDiv">
+    [ this document was created with
+    <a href="https://github.com/kaizhu256/node-utility2" target="_blank">utility2</a>
+    ]
+</div>
+</div>
